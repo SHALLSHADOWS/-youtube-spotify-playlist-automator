@@ -23,6 +23,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 from youtube_extractor import YouTubeExtractor
 from title_cleaner import TitleCleaner
 from spotify_manager import SpotifyManager
+from playlist_naming import PlaylistNamingEngine
 
 
 class PlaylistTransferReport:
@@ -114,6 +115,7 @@ def setup_argument_parser():
 Exemples d'utilisation:
   python yt2spotify.py --youtube "https://youtube.com/playlist?list=XXX" --name "Afrobeats Mix"
   python yt2spotify.py -y "URL" -n "Ma Playlist" -d "Description" --private
+  python yt2spotify.py -y "URL"  # Nom automatique basé sur l'analyse des titres
         """
     )
     
@@ -125,8 +127,8 @@ Exemples d'utilisation:
     
     parser.add_argument(
         '--name', '-n',
-        required=True,
-        help='Nom de la playlist Spotify à créer'
+        required=False,
+        help='Nom de la playlist Spotify (optionnel, nom automatique si non spécifié)'
     )
     
     parser.add_argument(
@@ -171,7 +173,6 @@ def main():
     
     # Initialisation du rapport
     report = PlaylistTransferReport()
-    report.playlist_name = args.name
     start_time = datetime.now()
     
     print("🎵 YouTube Mix → Spotify Playlist Automator")
@@ -236,23 +237,47 @@ def main():
                 report.add_not_found_track(title)
                 print(f"❌ → Non trouvé")
         
+        # 2.5. Génération automatique du nom de playlist si nécessaire
+        playlist_name = args.name
+        playlist_description = args.description
+        
+        if not playlist_name and found_tracks:
+            print(f"\n🧠 Génération automatique du nom de playlist...")
+            naming_engine = PlaylistNamingEngine()
+            
+            # Extraire les titres pour l'analyse
+            track_titles = [f"{track['name']} - {', '.join(track['artists'])}" for track in found_tracks]
+            playlist_name, auto_description = naming_engine.create_playlist_identity(track_titles)
+            print(f"🎯 Nom généré: '{playlist_name}'")
+            
+            # Utiliser la description automatique si aucune n'est fournie
+            if not playlist_description:
+                playlist_description = auto_description
+                print(f"📝 Description générée: '{playlist_description[:100]}{'...' if len(playlist_description) > 100 else ''}'")
+        
+        # Définir le nom final pour le rapport
+        if not playlist_name:
+            playlist_name = f"Playlist YouTube {datetime.now().strftime('%d-%m-%Y')}"
+        
+        report.playlist_name = playlist_name
+        
         # 3. Création de la playlist (si pas en mode rapport seulement)
         playlist_id = None
         if not args.report_only and found_tracks:
             print(f"\n🎯 Création de la playlist Spotify...")
             
             # Vérifier si la playlist existe déjà
-            existing_playlist = spotify_manager.playlist_exists(args.name)
+            existing_playlist = spotify_manager.playlist_exists(playlist_name)
             if existing_playlist and not args.force:
-                print(f"⚠️  Une playlist '{args.name}' existe déjà!")
+                print(f"⚠️  Une playlist '{playlist_name}' existe déjà!")
                 print("Utilisez --force pour forcer la création ou choisissez un autre nom.")
                 return 1
             
             # Créer la playlist
-            description = args.description or f"Importée depuis YouTube le {datetime.now().strftime('%d/%m/%Y')}"
+            final_description = playlist_description or f"Importée depuis YouTube le {datetime.now().strftime('%d/%m/%Y')}"
             playlist_id = spotify_manager.create_playlist(
-                name=args.name,
-                description=description,
+                name=playlist_name,
+                description=final_description,
                 public=not args.private
             )
             
