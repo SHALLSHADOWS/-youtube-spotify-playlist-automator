@@ -182,6 +182,21 @@ class TitleCleaner:
             
             # Requête avec track: pour être plus précis
             queries.append(f"track:{song_title} artist:{artist}")
+            
+            # NOUVEAU: Essayer juste le titre si c'est un mot court/acronyme
+            if len(song_title.replace(" ", "")) <= 5 or song_title.isupper():
+                queries.append(song_title)
+                queries.append(f'"{song_title}"')  # Recherche exacte pour acronymes
+            
+            # NOUVEAU: Essayer sans mots communs dans l'artiste
+            common_words = ['feat', 'ft', 'featuring', 'with', 'and', '&']
+            clean_artist = artist
+            for word in common_words:
+                clean_artist = clean_artist.replace(f' {word} ', ' ').replace(f' {word}.', ' ')
+            clean_artist = ' '.join(clean_artist.split())  # Nettoyer espaces
+            if clean_artist != artist and clean_artist:
+                queries.append(f"{clean_artist} {song_title}")
+                queries.append(f"{song_title} {clean_artist}")
         
         # Toujours inclure le titre nettoyé simple
         cleaned = self.clean_title(title)
